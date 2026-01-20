@@ -99,7 +99,8 @@ def get_android_manifest(package_name, app_name):
         android:theme="@android:style/Theme.NoTitleBar"
         android:usesCleartextTraffic="true">
         <activity android:name=".MainActivity"
-                  android:exported="true">
+                  android:exported="true"
+                  android:configChanges="orientation|screenSize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -118,11 +119,19 @@ def get_main_activity(package_name):
     import android.webkit.WebSettings;
     import android.webkit.WebView;
     import android.webkit.WebViewClient;
+    import android.webkit.WebChromeClient;
     import android.view.KeyEvent;
+    import android.view.View;
+    import android.view.ViewGroup;
+    import android.view.WindowManager;
+    import android.widget.FrameLayout;
 
     public class MainActivity extends Activity {{
 
         private WebView myWebView;
+        private View mCustomView;
+        private WebChromeClient.CustomViewCallback mCustomViewCallback;
+        private FrameLayout mFullscreenContainer;
 
         @Override
         protected void onCreate(Bundle savedInstanceState) {{
@@ -136,13 +145,75 @@ def get_main_activity(package_name):
             webSettings.setDomStorageEnabled(true);
             webSettings.setAllowFileAccess(true);
             webSettings.setAllowContentAccess(true);
+            webSettings.setMediaPlaybackRequiresUserGesture(false);
 
             myWebView.setWebViewClient(new WebViewClient());
+            
+            myWebView.setWebChromeClient(new WebChromeClient() {{
+                @Override
+                public void onShowCustomView(View view, CustomViewCallback callback) {{
+                    if (mCustomView != null) {{
+                        onHideCustomView();
+                        return;
+                    }}
+                    mCustomView = view;
+                    mCustomViewCallback = callback;
+
+                    // 1. Attiva la modalità immersiva (Nasconde tasti Android e Status Bar)
+                    getWindow().getDecorView().setSystemUiVisibility(
+                            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+
+                    // 2. Prepara il container per il video
+                    ViewGroup rootView = (ViewGroup) getWindow().getDecorView();
+                    mFullscreenContainer = new FrameLayout(MainActivity.this);
+                    mFullscreenContainer.setBackgroundColor(0xFF000000); // Nero assoluto
+                    
+                    mFullscreenContainer.addView(view, new FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT));
+                    
+                    rootView.addView(mFullscreenContainer, new ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT));
+
+                    myWebView.setVisibility(View.GONE);
+                }}
+
+                @Override
+                public void onHideCustomView() {{
+                    if (mCustomView == null) return;
+
+                    // 1. Ripristina la visibilità dell'interfaccia Android normale
+                    getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+
+                    // 2. Rimuovi il video dal root layout
+                    ViewGroup rootView = (ViewGroup) getWindow().getDecorView();
+                    rootView.removeView(mFullscreenContainer);
+                    mFullscreenContainer = null;
+                    mCustomView = null;
+                    mCustomViewCallback.onCustomViewHidden();
+                    
+                    // 3. Torna alla WebView
+                    myWebView.setVisibility(View.VISIBLE);
+                }}
+            }});
+
             myWebView.loadUrl("file:///android_asset/index.html");
         }}
 
         @Override
         public boolean onKeyDown(int keyCode, KeyEvent event) {{
+            // Se premo "Indietro" mentre il video è aperto, lo chiude
+            if (keyCode == KeyEvent.KEYCODE_BACK && mCustomView != null) {{
+                myWebView.getWebChromeClient().onHideCustomView();
+                return true;
+            }}
+            // Altrimenti gestisce la cronologia della WebView
             if ((keyCode == KeyEvent.KEYCODE_BACK) && myWebView.canGoBack()) {{
                 myWebView.goBack();
                 return true;
@@ -151,7 +222,7 @@ def get_main_activity(package_name):
         }}
     }}
     """)
-
+    
 def get_layout(package_name):
     return f'''<?xml version="1.0" encoding="utf-8"?>
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
