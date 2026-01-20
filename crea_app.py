@@ -112,6 +112,82 @@ def get_android_manifest(package_name, app_name):
 </manifest>
 '''
 
+def get_android_manifest_tv(package_name, app_name):
+    # Nota l'aggiunta di android:banner, le uses-feature e la category LEANBACK_LAUNCHER
+    return f'''<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+
+    <application
+        android:allowBackup="true"
+        android:label="{app_name}"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:banner="@drawable/tv_banner"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.NoTitleBar"
+        android:usesCleartextTraffic="true">
+        
+        <activity android:name=".MainActivity"
+                  android:exported="true"
+                  android:configChanges="orientation|screenSize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
+'''
+
+def generate_tv_banner(source_icon, custom_banner_path, res_path):
+    # Genera il banner TV.
+    # Priorità: 1. Immagine banner personalizzata fornita dall'utente
+    #           2. Generazione automatica partendo dall'icona app
+    #           3. Generazione generica (colore solido)
+    
+    drawable_dir = os.path.join(res_path, "drawable")
+    os.makedirs(drawable_dir, exist_ok=True)
+    banner_dest_path = os.path.join(drawable_dir, "tv_banner.png")
+
+    try:
+        # CASO 1: L'utente ha fornito un'immagine specifica per il banner
+        if custom_banner_path and os.path.exists(custom_banner_path):
+            img = Image.open(custom_banner_path).convert("RGBA")
+            # Ridimensiona forzatamente a 320x180 (o mantieni aspect ratio crop)
+            # Qui facciamo un resize semplice per sicurezza
+            img = img.resize((320, 180), Image.LANCZOS)
+            img.save(banner_dest_path, format="PNG")
+            print(f"   - Banner TV personalizzato applicato: {custom_banner_path}")
+            return
+
+        # CASO 2: Nessun banner fornito, usiamo l'icona dell'app
+        if source_icon and os.path.exists(source_icon):
+            print("   ⚠️  Banner TV non specificato: ne verrà generato uno usando l'icona dell'app.")
+            img = Image.open(source_icon).convert("RGBA")
+            # Sfondo grigio scuro elegante
+            banner = Image.new('RGBA', (320, 180), (33, 33, 33, 255))
+            # Icona ridimensionata per stare al centro
+            img.thumbnail((140, 140), Image.LANCZOS)
+            offset = ((320 - img.width) // 2, (180 - img.height) // 2)
+            banner.paste(img, offset, img)
+            banner.save(banner_dest_path, format="PNG")
+            print(f"   - Banner TV generato automaticamente in {banner_dest_path}")
+        
+        # CASO 3: Nessuna immagine fornita affatto
+        else:
+            print("   ⚠️  Nessuna immagine fornita. Verrà creato un banner generico.")
+            banner = Image.new('RGB', (320, 180), (70, 130, 180)) # Blu default
+            banner.save(banner_dest_path, format="PNG")
+
+    except Exception as e:
+        print(f"❌ ERRORE generazione banner TV: {e}")
+
 def get_main_activity(package_name):
     return textwrap.dedent(f"""
     package {package_name};
@@ -357,8 +433,17 @@ def print_usage():
 def main():
     is_windows = platform.system() == "Windows"
 
+    # Help rapido
     if len(sys.argv) < 2:
-        print_usage()
+        print("\nUso: python3 crea_app.py <cartella_web> [opzioni]")
+        print("\nOpzioni (in qualsiasi ordine):")
+        print("  <percorso_icona.png>   : Imposta l'icona dell'app")
+        print("  tv                     : Attiva modalità Android TV")
+        print("  <percorso_banner.png>  : (Solo per TV) Imposta il banner specifico")
+        print("\nEsempi:")
+        print("  Solo Mobile : python3 crea_app.py miosito icona.png")
+        print("  Solo TV     : python3 crea_app.py miosito icona.png tv banner.png")
+        print("  TV (Auto)   : python3 crea_app.py miosito icona.png tv")
         sys.exit(1)
 
     web_dir_name = sys.argv[1].rstrip('/\\')
@@ -366,35 +451,58 @@ def main():
         print(f"❌ Errore: La cartella '{web_dir_name}' non esiste.")
         sys.exit(1)
 
+    # --- PARSING DEGLI ARGOMENTI AVANZATO ---
     icon_path = None
-    if len(sys.argv) >= 3:
-        icon_path = sys.argv[2]
-        if not os.path.exists(icon_path):
-            print(f"❌ Avviso: Il file icona '{icon_path}' non esiste. Verrà utilizzata l'icona di default.")
-            icon_path = None
+    banner_path = None
+    target_mode = "mobile" # default
+
+    # Analizziamo gli argomenti dal secondo in poi
+    remaining_args = sys.argv[2:]
+    
+    # 1. Cerchiamo prima la modalità
+    if "tv" in [arg.lower() for arg in remaining_args]:
+        target_mode = "tv"
+    
+    # 2. Cerchiamo le immagini
+    # La prima immagine trovata è SEMPRE l'icona.
+    # La seconda immagine trovata (se siamo in TV) è il banner.
+    found_images = []
+    for arg in remaining_args:
+        if arg.lower() in ["tv", "mobile"]:
+            continue # Salta le parole chiave
+        if os.path.exists(arg):
+            found_images.append(arg)
+    
+    if len(found_images) > 0:
+        icon_path = found_images[0]
+    if len(found_images) > 1 and target_mode == "tv":
+        banner_path = found_images[1]
+
+    # --- FINE PARSING ---
 
     android_sdk_home = os.environ.get("ANDROID_HOME")
     if not android_sdk_home:
-        print("❌ ERRORE: La variabile d'ambiente ANDROID_HOME non è impostata.")
+        print("❌ ERRORE: Variabile ANDROID_HOME non impostata.")
         sys.exit(1)
         
     java_home = os.environ.get("JAVA_HOME")
     if not java_home:
-        print("❌ ERRORE: La variabile d'ambiente JAVA_HOME non è impostata.")
-        print("          È necessario impostare JAVA_HOME a un JDK versione 11 o superiore.")
-        print("          Esempio (Linux/macOS): export JAVA_HOME=/path/to/jdk-11")
-        print("          Esempio (Windows PowerShell): $env:JAVA_HOME='C:\\path\\to\\jdk-11'")
+        print("❌ ERRORE: Variabile JAVA_HOME non impostata.")
         sys.exit(1)
-    # Potremmo aggiungere un controllo più robusto della versione Java qui,
-    # ma per ora un semplice check di esistenza è sufficiente per guidare l'utente.
 
     app_name = os.path.basename(os.path.abspath(web_dir_name))
     package_name = f"com.{app_name.lower().replace(' ', '').replace('-', '_')}"
-    project_dir = f"{app_name}_android_app"
+    project_suffix = "_tv" if target_mode == "tv" else ""
+    project_dir = f"{app_name}_android_app{project_suffix}"
 
-    print(f"🚀 Inizio creazione app per '{app_name}' su sistema {platform.system()}")
+    print(f"\n🚀 CONFIGURAZIONE RILEVATA:")
+    print(f"   - App Name : {app_name}")
+    print(f"   - Modalità : {target_mode.upper()}")
+    print(f"   - Icona    : {icon_path if icon_path else 'Default Android'}")
+    if target_mode == "tv":
+        print(f"   - Banner   : {banner_path if banner_path else 'Automatico (da Icona)'}")
 
-    # 1. Pulisci e crea la struttura delle cartelle
+    # 1. Pulisci e crea struttura
     if os.path.exists(project_dir):
         shutil.rmtree(project_dir)
     
@@ -408,37 +516,38 @@ def main():
     for path in [package_path, assets_path, layout_path, wrapper_path, res_path]:
         os.makedirs(path, exist_ok=True)
     
-    # 2. Scrivi tutti i file di configurazione
-    print("   - Scrittura dei file di configurazione...")
+    # 2. Scrivi file configurazione
     with open(os.path.join(project_dir, 'settings.gradle'), 'w') as f: f.write(get_settings_gradle())
     with open(os.path.join(project_dir, 'build.gradle'), 'w') as f: f.write(get_root_build_gradle())
     with open(os.path.join(app_dir, 'build.gradle'), 'w') as f: f.write(get_app_build_gradle(package_name))
     with open(os.path.join(wrapper_path, 'gradle-wrapper.properties'), 'w') as f: f.write(get_gradle_wrapper_properties())
     with open(os.path.join(project_dir, 'local.properties'), 'w') as f: f.write(get_local_properties(android_sdk_home))
 
-    # 3. Scrivi i file sorgente dell'app
-    with open(os.path.join(app_dir, 'src', 'main', 'AndroidManifest.xml'), 'w') as f: f.write(get_android_manifest(package_name, app_name))
+    # 3. MANIFEST & GRAFICA
+    manifest_content = ""
+    if target_mode == "tv":
+        manifest_content = get_android_manifest_tv(package_name, app_name)
+        # Passiamo sia l'icona (per il fallback) che il banner esplicito (se esiste)
+        generate_tv_banner(icon_path, banner_path, res_path)
+    else:
+        manifest_content = get_android_manifest(package_name, app_name)
+
+    with open(os.path.join(app_dir, 'src', 'main', 'AndroidManifest.xml'), 'w') as f: f.write(manifest_content)
     with open(os.path.join(package_path, 'MainActivity.java'), 'w') as f: f.write(get_main_activity(package_name))
     with open(os.path.join(layout_path, 'activity_main.xml'), 'w') as f: f.write(get_layout(package_name))
 
     if icon_path and os.path.exists(icon_path):
         generate_icons(icon_path, res_path)
-    else:
-        print("   - Icona non fornita, verrà utilizzata l'icona di default di Android")
 
-    print("   - Copia dei file web...")
+    print("   - Copia file web...")
     shutil.copytree(web_dir_name, assets_path, dirs_exist_ok=True)
 
-    # Prepara l'ambiente per le chiamate subprocess in modo che usino il JAVA_HOME corretto
     env_for_gradle = os.environ.copy()
-    if java_home: # Se JAVA_HOME è impostato, lo prepende a PATH per i subprocessi
-        env_for_gradle["PATH"] = os.path.join(java_home, "bin") + os.pathsep + env_for_gradle["PATH"]
+    env_for_gradle["PATH"] = os.path.join(java_home, "bin") + os.pathsep + env_for_gradle["PATH"]
 
-    # ... (all subprocess.run calls will now use this env_for_gradle) ...
-
-    # 5. Genera chiave di firma
-    print("   - Generazione della chiave di firma...")
-    keystore_password = "aimods2025" # Password semplice per automazione
+    # 5. Keystore
+    print("   - Generazione keystore...")
+    keystore_password = "aimods2025"
     keystore_filename = f"{app_name}.keystore"
     key_alias = f"{app_name}_alias"
     
@@ -454,23 +563,18 @@ def main():
     ]
     try:
         subprocess.run(keytool_command, cwd=app_dir, check=True, capture_output=True, text=True, shell=is_windows, env=env_for_gradle)
-        props_content = (f"storePassword={keystore_password}\n"
-                         f"keyPassword={keystore_password}\n"
-                         f"keyAlias={key_alias}\n"
-                         f"storeFile={keystore_filename}\n")
+        props_content = f"storePassword={keystore_password}\nkeyPassword={keystore_password}\nkeyAlias={key_alias}\nstoreFile={keystore_filename}\n"
         with open(os.path.join(app_dir, 'keystore.properties'), 'w') as f: f.write(props_content)
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        print(f"❌ ERRORE con keytool: {e}. Assicurati che 'keytool' del JDK sia nel PATH.")
-        if isinstance(e, subprocess.CalledProcessError): print(e.stderr)
+    except Exception as e:
+        print(f"❌ Errore keytool: {e}")
         sys.exit(1)
 
-    # 6. Prepara il Gradle Wrapper
-    print("   - Preparazione del Gradle Wrapper...")
+    # Wrapper Setup
     if is_windows:
         gradlew_path = os.path.join(project_dir, 'gradlew.bat')
         with open(gradlew_path, 'w', encoding='utf-8') as f: f.write(get_gradlew_windows_script())
         gradlew_executable = 'gradlew.bat'
-    else: # Linux/macOS
+    else:
         gradlew_path = os.path.join(project_dir, 'gradlew')
         with open(gradlew_path, 'w', encoding='utf-8') as f: f.write(get_gradlew_unix_script())
         os.chmod(gradlew_path, 0o755)
@@ -479,66 +583,39 @@ def main():
     try:
         import urllib.request
         wrapper_jar_url = "https://github.com/gradle/gradle/raw/v8.5.0/gradle/wrapper/gradle-wrapper.jar"
-        print("     - Download di gradle-wrapper.jar...")
         with urllib.request.urlopen(wrapper_jar_url) as response, open(os.path.join(wrapper_path, 'gradle-wrapper.jar'), 'wb') as out_file:
             shutil.copyfileobj(response, out_file)
-    except Exception as e:
-        print(f"❌ ERRORE durante il download del wrapper: {e}")
+    except Exception:
         sys.exit(1)
 
-    # 7. Esegui la build
-    print("   - Avvio di Gradle per la compilazione della RELEASE...")
+    print("   - Avvio Build Gradle...")
     try:
         subprocess.run([gradlew_executable, ':app:assembleRelease'], cwd=project_dir, check=True, text=True, shell=is_windows, env=env_for_gradle)
-        print("✅ Build completata con successo!")
     except subprocess.CalledProcessError as e:
-        print("❌ ERRORE DURANTE LA BUILD DI GRADLE!")
         print(e.stderr)
         sys.exit(1)
 
-    # DIAGNOSTICA: Elenca il contenuto della directory di output dell'APK
-    apk_output_dir_actual = os.path.join(app_dir, 'build', 'outputs', 'apk', 'release')
-    print(f"   - Contenuto della directory di output: {apk_output_dir_actual}")
-    if os.path.exists(apk_output_dir_actual):
-        if is_windows:
-            subprocess.run(['cmd', '/c', 'dir', apk_output_dir_actual], check=True, text=True)
-        else:
-            subprocess.run(['ls', '-l', apk_output_dir_actual], check=True, text=True)
-    else:
-        print(f"     (La directory di output non esiste: {apk_output_dir_actual})")
-
-    # 8. Sposta l'APK finale
-    print("   - Spostamento dell'APK finale...")
     apk_output_dir = "apk_generati"
     os.makedirs(apk_output_dir, exist_ok=True)
-    apk_final_name = f"{app_name}.apk"
+    apk_final_name = f"{app_name}{'_TV' if target_mode == 'tv' else ''}.apk"
     apk_final_path = os.path.join(apk_output_dir, apk_final_name)
 
-    # Prova prima il nome standard, poi il fallback "unsigned"
     candidates = [
         os.path.join(app_dir, 'build', 'outputs', 'apk', 'release', 'app-release.apk'),
         os.path.join(app_dir, 'build', 'outputs', 'apk', 'release', 'app-release-unsigned.apk')
     ]
-
-    found_apk = False
-    for candidate_path in candidates:
-        if os.path.exists(candidate_path):
-            shutil.move(candidate_path, apk_final_path)
-            found_apk = True
-            print(f"   - APK trovato: {candidate_path}")
+    found = False
+    for p in candidates:
+        if os.path.exists(p):
+            shutil.move(p, apk_final_path)
+            found = True
             break
     
-    if not found_apk:
-        print(f"❌ ERRORE: Nessun APK di release trovato nei percorsi attesi.")
-        print("   Percorsi cercati:")
-        for p in candidates: print(f"     - {p}")
-        sys.exit(1)
-
-    # 9. Pulizia
-    print(f"   - Pulizia della cartella di progetto '{project_dir}'...")
-    shutil.rmtree(project_dir)
-
-    print(f"\n🎉🎉🎉 FATTO! L'APK di RELEASE si trova qui: {os.path.abspath(apk_final_path)}")
+    if found:
+        shutil.rmtree(project_dir)
+        print(f"\n🎉 FATTO! APK creato in: {os.path.abspath(apk_final_path)}")
+    else:
+        print("❌ APK non trovato.")
 
 if __name__ == '__main__':
     main()
