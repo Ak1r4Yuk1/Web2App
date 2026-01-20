@@ -18,6 +18,7 @@ Lo script automatizza l'intera pipeline di build Android, inclusa la configurazi
 *   **APK di Release Firmato**: Genera automaticamente una chiave di firma e compila un APK di release pronto per l'installazione.
 *   **Multipiattaforma**: Funziona su Linux, macOS e Windows.
 *   **Facile da Usare**: Richiede solo un comando dopo una breve configurazione dell'ambiente.
+*   **Custom icon**: Puoi selezionare la tua icona per la app
 
 ## Prerequisiti
 
@@ -100,6 +101,12 @@ Per utilizzare questo script, il tuo sistema deve avere installati e configurati
     ```bash
     python3 crea_app.py IlMioSitoWeb
     ```
+    Se vuoi una tua icona personalizzata:
+    
+    ```bash
+    python3 crea_app.py IlMioSitoWeb tuaicona.png
+    ```
+    
     Sostituisci `IlMioSitoWeb` con il nome reale della tua cartella.
 
 4.  **Trova il tuo APK:**
