@@ -106,8 +106,12 @@ Per utilizzare questo script, il tuo sistema deve avere installati e configurati
     ```bash
     python3 crea_app.py IlMioSitoWeb tuaicona.png
     ```
+    Se vuoi creare la app per TV con relativo banner (immagine 320x180 Pixels):
+    ```bash
+    crea_app.py IlMioSitoWeb ./tuaicona.png ./TuoBannerTV320x180.png tv
+    ```    
     
-    Sostituisci `IlMioSitoWeb` con il nome reale della tua cartella.
+    Sostituisci `IlMioSitoWeb` con il nome reale della tua cartella, `tuaimmagine` con l'immagine per l'icona e `TuoBannerTV320x180` per l'immagine del tuo banner per la TV.
 
 4.  **Trova il tuo APK:**
     Al completamento, lo script creerà una nuova directory `apk_generati/` nella directory `Web2App/`. All'interno troverai il tuo APK di release firmato, nominato come `IlMioSitoWeb.apk` (o il nome della cartella che hai fornito).
