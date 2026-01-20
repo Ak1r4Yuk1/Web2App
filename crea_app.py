@@ -6,7 +6,7 @@ import textwrap
 import random
 import string
 import platform
-
+from PIL import Image
 # QUESTO SCRIPT È IL RISULTATO FINALE E FUNZIONANTE.
 # È MULTIPIATTAFORMA (WINDOWS/LINUX/MAC).
 # ESECUZIONE: python3 crea_app_finale.py <nome_cartella_web>
@@ -95,6 +95,8 @@ def get_android_manifest(package_name, app_name):
     <application
         android:allowBackup="true"
         android:label="{app_name}"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.NoTitleBar"
         android:usesCleartextTraffic="true">
@@ -239,6 +241,31 @@ def get_layout(package_name):
 </RelativeLayout>
 '''
 
+# ==============================
+# ICON GENERATOR
+# ==============================
+
+def generate_icons(source_icon, res_path):
+    sizes = {
+        "mipmap-mdpi": 48,
+        "mipmap-hdpi": 72,
+        "mipmap-xhdpi": 96,
+        "mipmap-xxhdpi": 144,
+        "mipmap-xxxhdpi": 192
+    }
+
+    try:
+        img = Image.open(source_icon).convert("RGBA")
+
+        for folder, size in sizes.items():
+            out_dir = os.path.join(res_path, folder)
+            os.makedirs(out_dir, exist_ok=True)
+            out_img = img.resize((size, size), Image.LANCZOS)
+            out_img.save(os.path.join(out_dir, "ic_launcher.png"), format="PNG")
+        print(f"   - Icone generate da {source_icon}")
+    except Exception as e:
+        print(f"❌ ERRORE durante la generazione delle icone: {e}")
+        print("   Verranno utilizzate icone di default (se disponibili)")
 def get_gradle_wrapper_properties():
     return "distributionUrl=https://services.gradle.org/distributions/gradle-8.5-bin.zip\n"
 
@@ -315,9 +342,17 @@ def get_gradlew_windows_script():
 # --- FUNZIONI DELLO SCRIPT ---
 
 def print_usage():
-    print("❌ Errore: Manca l'argomento.")
-    print("Uso: python3 crea_app_finale.py <nome_cartella_web>")
-    print("Esempio: python3 crea_app_finale.py miosito")
+    print("Uso: python3 crea_app.py <nome_cartella_web> [percorso_icona]")
+    print("Esempio 1: python3 crea_app.py miosito")
+    print("Esempio 2: python3 crea_app.py miosito ./logo.png")
+    print("\nNote:")
+    print("- La cartella web deve contenere un file index.html")
+    print("- L'icona può essere in formato PNG, JPG, SVG, etc.")
+    print("- Se non viene fornita un'icona, l'app userà l'icona di default")
+
+# ==============================
+# MAIN SCRIPT
+# ==============================
 
 def main():
     is_windows = platform.system() == "Windows"
@@ -330,6 +365,13 @@ def main():
     if not os.path.isdir(web_dir_name):
         print(f"❌ Errore: La cartella '{web_dir_name}' non esiste.")
         sys.exit(1)
+
+    icon_path = None
+    if len(sys.argv) >= 3:
+        icon_path = sys.argv[2]
+        if not os.path.exists(icon_path):
+            print(f"❌ Avviso: Il file icona '{icon_path}' non esiste. Verrà utilizzata l'icona di default.")
+            icon_path = None
 
     android_sdk_home = os.environ.get("ANDROID_HOME")
     if not android_sdk_home:
@@ -360,9 +402,10 @@ def main():
     package_path = os.path.join(app_dir, 'src', 'main', 'java', *package_name.split('.'))
     assets_path = os.path.join(app_dir, 'src', 'main', 'assets')
     layout_path = os.path.join(app_dir, 'src', 'main', 'res', 'layout')
+    res_path = os.path.join(app_dir, 'src', 'main', 'res')
     wrapper_path = os.path.join(project_dir, 'gradle', 'wrapper')
     
-    for path in [package_path, assets_path, layout_path, wrapper_path]:
+    for path in [package_path, assets_path, layout_path, wrapper_path, res_path]:
         os.makedirs(path, exist_ok=True)
     
     # 2. Scrivi tutti i file di configurazione
@@ -378,7 +421,11 @@ def main():
     with open(os.path.join(package_path, 'MainActivity.java'), 'w') as f: f.write(get_main_activity(package_name))
     with open(os.path.join(layout_path, 'activity_main.xml'), 'w') as f: f.write(get_layout(package_name))
 
-    # 4. Copia i file web
+    if icon_path and os.path.exists(icon_path):
+        generate_icons(icon_path, res_path)
+    else:
+        print("   - Icona non fornita, verrà utilizzata l'icona di default di Android")
+
     print("   - Copia dei file web...")
     shutil.copytree(web_dir_name, assets_path, dirs_exist_ok=True)
 
@@ -391,7 +438,7 @@ def main():
 
     # 5. Genera chiave di firma
     print("   - Generazione della chiave di firma...")
-    keystore_password = "password123" # Password semplice per automazione
+    keystore_password = "aimods2025" # Password semplice per automazione
     keystore_filename = f"{app_name}.keystore"
     key_alias = f"{app_name}_alias"
     
@@ -478,6 +525,7 @@ def main():
         if os.path.exists(candidate_path):
             shutil.move(candidate_path, apk_final_path)
             found_apk = True
+            print(f"   - APK trovato: {candidate_path}")
             break
     
     if not found_apk:
